@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="spooky-emerald">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BEJACASTLE - Das Spuk-Schloss im Wald</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            retro: ['"Press Start 2P"', 'monospace'],
+            pixel: ['"VT323"', 'monospace'],
+            sans: ['"Outfit"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Custom Retro Styles -->
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="h-screen h-[100dvh] w-screen flex flex-col items-center justify-between p-2 md:p-3 overflow-hidden select-none box-border transition-colors duration-300">
+
+  <!-- Header Section -->
+  <header class="w-full max-w-5xl flex flex-wrap items-center justify-between gap-2 mb-1 shrink-0">
+    <div class="flex items-center gap-2.5">
+      <div class="w-7 h-7 bg-emerald-500 rounded-sm flex items-center justify-center font-retro text-black text-[12px] font-black shadow-[0_0_10px_#00ff66]">
+        🏰
+      </div>
+      <div>
+        <h1 class="text-base md:text-xl font-retro tracking-widest glow-text text-emerald-400 leading-none">BEJACASTLE</h1>
+        <p class="text-[10px] font-pixel text-emerald-600 tracking-wider">DAS SPUK-SCHLOSS IM VERFLUCHTEN WALD • 1984</p>
+      </div>
+    </div>
+
+    <!-- Quick Action Bar -->
+    <div class="flex flex-wrap items-center gap-1.5">
+      <button id="soundboardBtn" class="retro-btn text-yellow-400" title="Grusel-Soundeffekte anhören">
+        🔊 SOUND-TEST
+      </button>
+
+      <button id="journalBtn" class="retro-btn" title="Tagebuch & Lore">
+        📜 TAGEBUCH
+      </button>
+
+      <button id="highscoreBtn" class="retro-btn" title="Bestenliste">
+        🏆 BESTENLISTE
+      </button>
+
+      <button id="settingsBtn" class="retro-btn" title="Optionen öffnen">
+        ⚙️ OPTIONEN
+      </button>
+
+      <button id="soundBtn" class="retro-btn active" title="Sound An/Aus">
+        🔊 SOUND: AN
+      </button>
+
+      <button id="restartBtn" class="retro-btn text-rose-400" title="Kapitel neu starten">
+        🔄 NEUSTART
+      </button>
+    </div>
+  </header>
+
+  <!-- Top Player HUD Bar (Chapter, Objective, Sanity & Inventory) -->
+  <div class="w-full max-w-5xl flex flex-wrap items-center justify-between gap-2 px-3 py-1 bg-black/60 border border-emerald-950/80 rounded shrink-0 text-xs">
+    <!-- Chapter and Current Objective -->
+    <div class="flex flex-col">
+      <span id="hudChapterNum" class="text-emerald-400 font-retro text-[10px]">KAPITEL I: DER VERFLUCHTE WALD</span>
+      <span id="hudGoal" class="text-slate-300 font-pixel text-[13px]">Ziel: Finde die Laterne und erkunde den Pfad.</span>
+    </div>
+
+    <!-- Sanity Meter -->
+    <div class="flex items-center gap-2 bg-black/50 px-2 py-0.5 border border-emerald-900 rounded">
+      <span id="hudHeartIcon" class="heart-pulse text-red-500 text-sm">❤️</span>
+      <span class="text-[10px] font-pixel text-slate-400">VERSTAND:</span>
+      <span id="hudSanityVal" class="text-emerald-400 font-retro text-[10px]">100%</span>
+    </div>
+
+    <!-- Inventory Pouch Slots -->
+    <div class="flex items-center gap-1.5">
+      <span class="text-[10px] font-pixel text-slate-400 mr-1">INVENTAR:</span>
+      <div class="inventory-slot rounded" title="Slot 1"></div>
+      <div class="inventory-slot rounded" title="Slot 2"></div>
+      <div class="inventory-slot rounded" title="Slot 3"></div>
+      <div class="inventory-slot rounded" title="Slot 4"></div>
+    </div>
+  </div>
+
+  <!-- Main Arcade Container & CRT Screen Frame -->
+  <main class="flex-1 w-full max-w-5xl flex flex-col items-center justify-center min-h-0 relative my-1">
+    
+    <!-- Screen Bezel Outer Frame -->
+    <div id="arcade-container" class="arcade-bezel flex-1 min-h-0 w-full flex items-center justify-center p-1.5 md:p-2 relative overflow-hidden">
+      
+      <!-- CRT Shader & Screen Layer -->
+      <div id="crtScreen" class="crt-screen crt-curve crt-flicker h-full w-full max-h-full flex items-center justify-center relative shadow-inner overflow-hidden">
+        <canvas id="gameCanvas" class="max-h-full max-w-full aspect-[16/10] object-contain block cursor-crosshair"></canvas>
+        
+        <!-- Screen Flash Overlay for Lightning and Screams -->
+        <div id="screenFlashOverlay" class="absolute inset-0 pointer-events-none z-30 opacity-0"></div>
+      </div>
+
+    </div>
+
+    <!-- Touch Controls Overlay (Mobile D-Pad) -->
+    <div id="touchControls" class="md:hidden w-full flex justify-between items-center px-4 py-1 shrink-0">
+      <!-- D-Pad -->
+      <div class="grid grid-cols-3 gap-1 w-28 h-28">
+        <div></div>
+        <button id="touchUp" class="retro-btn h-8 font-bold">▲</button>
+        <div></div>
+        <button id="touchLeft" class="retro-btn h-8 font-bold">◀</button>
+        <div></div>
+        <button id="touchRight" class="retro-btn h-8 font-bold">▶</button>
+        <div></div>
+        <button id="touchDown" class="retro-btn h-8 font-bold">▼</button>
+        <div></div>
+      </div>
+
+      <!-- Action Button -->
+      <button id="touchAction" class="retro-btn w-20 h-20 rounded-full text-xs font-retro bg-emerald-700/80">
+        AKTION [E]
+      </button>
+    </div>
+
+    <!-- Controls Legend & Status Bar -->
+    <div class="w-full max-w-5xl py-1 px-3 flex flex-wrap items-center justify-between text-[11px] font-pixel text-slate-400 bg-black/50 border border-emerald-950/70 rounded shrink-0">
+      <div class="flex flex-wrap gap-3">
+        <span><strong class="text-emerald-400 font-retro">BEWEGEN:</strong> [W/A/S/D] oder [Pfeiltasten]</span>
+        <span><strong class="text-cyan-400 font-retro">AKTION / DIALOG:</strong> [E] / [LEERTASTE]</span>
+        <span><strong class="text-yellow-400 font-retro">TAGEBUCH:</strong> [J]</span>
+        <span><strong class="text-pink-400 font-retro">MUTE:</strong> [M]</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-emerald-500">2D-LICHT: AKTIV</span>
+        <span class="text-slate-600">•</span>
+        <span class="text-cyan-400">GEWITTER: AKTIV</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="w-full max-w-5xl text-center text-[10px] font-pixel text-slate-500 shrink-0">
+    BEJACASTLE • RETRO HORROR ADVENTURE • ZERO LOGIN
+  </footer>
+
+  <!-- ========================================== -->
+  <!-- MODAL: GRUSEL SOUNDBOARD / SOUND-TEST      -->
+  <!-- ========================================== -->
+  <div id="soundboardModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#07130a] border-2 border-emerald-500 rounded-lg max-w-xl w-full p-5 glow-box text-slate-200">
+      <div class="flex justify-between items-center mb-4 border-b border-emerald-900 pb-2">
+        <h2 class="text-sm md:text-base font-retro text-emerald-400">🔊 GRUSEL-SOUND-TEST (HORROR SOUNDBOARD)</h2>
+        <button id="closeSoundboardBtn" class="text-emerald-400 hover:text-white font-bold text-lg">✕</button>
+      </div>
+
+      <p class="text-xs font-pixel text-slate-300 mb-3">
+        Klicke auf die Soundeffekte, um den proceduralen Web-Audio-Synthesizer direkt zu testen:
+      </p>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs font-pixel">
+        <button id="sb_wind" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-emerald-300">💨 Heulender Wind</span>
+          <span class="text-[11px] text-slate-400">Modulierter Sturm</span>
+        </button>
+
+        <button id="sb_thunder" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-yellow-300">⚡ Donnerschlag</span>
+          <span class="text-[11px] text-slate-400">Blitz & Sub-Bass-Rumpeln</span>
+        </button>
+
+        <button id="sb_door_wood" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-amber-300">🚪 Knarrende Holztür</span>
+          <span class="text-[11px] text-slate-400">Altes Eichenportal</span>
+        </button>
+
+        <button id="sb_door_iron" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-slate-300">⛓️ Rostiges Schlosstor</span>
+          <span class="text-[11px] text-slate-400">Eisernes Gitter</span>
+        </button>
+
+        <button id="sb_heartbeat" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-red-400">💓 Herzschlag</span>
+          <span class="text-[11px] text-slate-400">Panik-Pulsation</span>
+        </button>
+
+        <button id="sb_ghost" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-cyan-300">👻 Geisterklage</span>
+          <span class="text-[11px] text-slate-400">Spektralflüstern</span>
+        </button>
+
+        <button id="sb_wolf" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-blue-300">🐺 Wolfsgeheul</span>
+          <span class="text-[11px] text-slate-400">Tiefer Mitternachtswald</span>
+        </button>
+
+        <button id="sb_raven" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-purple-300">🦅 Krähenruf</span>
+          <span class="text-[11px] text-slate-400">Dissonantes Krächzen</span>
+        </button>
+
+        <button id="sb_stinger" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-rose-400">😱 Horror-Stinger</span>
+          <span class="text-[11px] text-slate-400">Jumpscare-Akkord</span>
+        </button>
+
+        <button id="sb_clock" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-amber-400">🔔 Turmuhr-Schlag</span>
+          <span class="text-[11px] text-slate-400">Mitternachtsglocke</span>
+        </button>
+
+        <button id="sb_musicbox" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-pink-300">📜 Spuk-Spieldose</span>
+          <span class="text-[11px] text-slate-400">Melancholische Noten</span>
+        </button>
+
+        <button id="sb_item" class="sound-btn-card">
+          <span class="font-retro text-[10px] text-emerald-300">🌟 Relikt-Fund</span>
+          <span class="text-[11px] text-slate-400">Geheimnis gelöst</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: TAGEBUCH & LORE (JOURNAL)           -->
+  <!-- ========================================== -->
+  <div id="journalModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#07130a] border-2 border-emerald-500 rounded-lg max-w-lg w-full p-5 glow-box text-slate-200 max-h-[85vh] flex flex-col">
+      <div class="flex justify-between items-center mb-3 border-b border-emerald-900 pb-2">
+        <h2 class="text-sm font-retro text-emerald-400">📜 TAGEBUCH DES BURGHERREN</h2>
+        <button id="closeJournalBtn" class="text-emerald-400 hover:text-white font-bold text-lg">✕</button>
+      </div>
+      <div id="journalContent" class="overflow-y-auto flex-1 pr-1 space-y-2">
+        <!-- Dynamically filled -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: BESTENLISTE / HIGHSCORES            -->
+  <!-- ========================================== -->
+  <div id="highscoreModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#07130a] border-2 border-emerald-500 rounded-lg max-w-md w-full p-5 glow-box text-slate-200">
+      <div class="flex justify-between items-center mb-3 border-b border-emerald-900 pb-2">
+        <h2 class="text-sm font-retro text-emerald-400">🏆 CHRONIK DER MUTIGEN</h2>
+        <button id="closeHighscoreBtn" class="text-emerald-400 hover:text-white font-bold text-lg">✕</button>
+      </div>
+      <div id="highscoreList" class="space-y-1 max-h-64 overflow-y-auto pr-1">
+        <!-- Filled via API -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: EINSTELLUNGEN                       -->
+  <!-- ========================================== -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#07130a] border-2 border-emerald-500 rounded-lg max-w-md w-full p-5 glow-box text-slate-200">
+      <div class="flex justify-between items-center mb-4 border-b border-emerald-900 pb-2">
+        <h2 class="text-sm font-retro text-emerald-400">⚙️ ARCADE-EINSTELLUNGEN</h2>
+        <button id="closeSettingsBtn" class="text-emerald-400 hover:text-white font-bold text-lg">✕</button>
+      </div>
+
+      <div class="space-y-3.5 text-xs font-pixel">
+        <!-- Theme Select -->
+        <div>
+          <label class="block text-emerald-300 font-bold mb-1">Farbthema / CRT-Palette:</label>
+          <select id="themeSelect" class="w-full bg-black/70 border border-emerald-500 text-emerald-300 p-1.5 rounded font-pixel text-sm">
+            <option value="spooky-emerald">🌲 Spukwald Emerald (Klassisch Grün)</option>
+            <option value="blood-moon">🩸 Blutmond Crimson (Dunkelrot)</option>
+            <option value="shadow-violet">🔮 Katakomben Violett (Synthwave Gothic)</option>
+            <option value="candlelight-amber">🕯️ Kerzenschein Amber (Warm CRT)</option>
+            <option value="phantom-mono">💀 Geister-Monochrom (1970s B&W)</option>
+          </select>
+        </div>
+
+        <!-- CRT Scanlines -->
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-bold text-emerald-300">CRT Scanlines & Wölbung</div>
+            <div class="text-slate-400 text-xs">Authentischer Retro-Röhrenmonitor</div>
+          </div>
+          <input type="checkbox" id="crtToggle" checked class="w-5 h-5 accent-emerald-500 cursor-pointer">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: SCHICKSALSWAHL (ENDING SELECTION)   -->
+  <!-- ========================================== -->
+  <div id="endingModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#0a0515] border-2 border-purple-500 rounded-lg max-w-lg w-full p-6 glow-box text-slate-100 text-center">
+      <h2 class="text-sm md:text-base font-retro text-purple-400 mb-2">🔮 DIE STUNDE DES SCHICKSAALS</h2>
+      <p class="text-xs font-pixel text-slate-300 mb-5 leading-relaxed">
+        Die drei Monolithen sind ausgerichtet. Das Schattensiegel pulsiert vor gewaltiger Energie. Wie entscheidest du dich?
+      </p>
+
+      <div class="flex flex-col gap-2.5">
+        <button id="endingBtnSalvation" class="retro-btn text-emerald-300 py-2.5">
+          🌟 DAS SIEGEL ZERSTÖREN (Erlösung & Fluch brechen)
+        </button>
+        <button id="endingBtnEscape" class="retro-btn text-yellow-300 py-2.5">
+          🏃 AUS DEM SCHLOSS FLIEHEN (Überleben um jeden Preis)
+        </button>
+        <button id="endingBtnDarkness" class="retro-btn text-purple-300 py-2.5">
+          👑 DIE SCHATTENMACHT BEANSPRUCHEN (Der neue Burgherr)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: SIEG & EPILOG                       -->
+  <!-- ========================================== -->
+  <div id="victoryModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#07130a] border-2 border-emerald-500 rounded-lg max-w-md w-full p-6 glow-box text-slate-200 text-center">
+      <h2 id="victoryTitle" class="text-sm md:text-base font-retro text-emerald-400 mb-3">ENDE ERREICHT</h2>
+      <p id="victoryText" class="text-xs font-pixel text-slate-300 mb-4 leading-relaxed"></p>
+
+      <div class="bg-black/60 border border-emerald-950 p-3 rounded mb-4 font-pixel text-xs space-y-1 text-left">
+        <div><strong class="text-emerald-400">TITEL:</strong> <span id="victoryBadge" class="text-yellow-300"></span></div>
+        <div><strong class="text-emerald-400">ÜBERLEBENSZEIT:</strong> <span id="victoryTime" class="text-cyan-300"></span></div>
+      </div>
+
+      <div class="mb-4 text-left">
+        <label class="block text-[11px] font-pixel text-slate-400 mb-1">Trage deinen Namen in die Chronik ein:</label>
+        <input type="text" id="playerNameInput" maxlength="12" value="REISENDER" class="w-full bg-black border border-emerald-500 text-emerald-300 p-2 text-center font-retro text-xs rounded uppercase">
+      </div>
+
+      <button id="submitScoreBtn" class="retro-btn w-full py-2 text-xs">
+        🏆 IN BESTENLISTE EINTRAGEN & NEU STARTEN
+      </button>
+    </div>
+  </div>
+
+  <!-- Script Loading -->
+  <script src="/js/audio.js"></script>
+  <script src="/js/story.js"></script>
+  <script src="/js/game.js"></script>
+  <script src="/js/ui.js"></script>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const game = new CastleGame(canvas);
+      window.castleGame = game;
+      window.castleUI.setGame(game);
+
+      // Main Game Loop
+      let lastTime = performance.now();
+      function gameLoop(now) {
+        const delta = Math.min((now - lastTime) / 1000, 0.1);
+        lastTime = now;
+
+        game.update(delta);
+        game.render();
+
+        requestAnimationFrame(gameLoop);
+      }
+
+      requestAnimationFrame(gameLoop);
+    });
+  </script>
+</body>
+</html>

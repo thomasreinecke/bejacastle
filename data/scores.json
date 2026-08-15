@@ -1,0 +1,23 @@
+[
+  {
+    "name": "SCHATTEN_JAEGER",
+    "timeSec": 245,
+    "ending": "Erlösung",
+    "sanity": 85,
+    "date": "2026-08-15"
+  },
+  {
+    "name": "WALD_WANDERER",
+    "timeSec": 310,
+    "ending": "Flucht",
+    "sanity": 60,
+    "date": "2026-08-14"
+  },
+  {
+    "name": "GRAF_BEJA",
+    "timeSec": 420,
+    "ending": "Schattenerbe",
+    "sanity": 20,
+    "date": "2026-08-13"
+  }
+]
