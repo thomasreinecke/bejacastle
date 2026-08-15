@@ -19,5 +19,12 @@
     "ending": "Schattenerbe",
     "sanity": 20,
     "date": "2026-08-13"
+  },
+  {
+    "name": "WANDERER",
+    "timeSec": 552,
+    "ending": "🌟 ENDE I: DIE ERLÖSUNG DES VERFLUCHTEN SCHLOSSES",
+    "sanity": 100,
+    "date": "2026-08-15"
   }
 ]

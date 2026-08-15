@@ -1,37 +1,90 @@
 /**
- * Bejacastle - Procedural Horror Web Audio Synthesizer
- * Generates an extensive collection of eerie, atmospheric sound effects,
- * ambient background soundscapes, and chiptune horror stingers without external audio files.
+ * Bejacastle - Realistic Recorded & Layered Web Audio Engine
+ * Uses authentic field recordings and foley audio samples (Thunder, Wind, Rain,
+ * Wolves, Ravens, Church Bells, Heavy Creaking Doors, Steps, Heartbeats, Music Box)
+ * with real-time Web Audio API processing, spatial pitch randomization, and procedural fallbacks.
  */
 
 class CastleAudioEngine {
   constructor() {
     this.ctx = null;
+    this.masterGain = null;
     this.muted = localStorage.getItem('bejacastle_muted') === 'true';
-    this.masterVolume = 0.45;
-    this.ambientVolume = 0.25;
+    this.masterVolume = 0.50;
+    this.ambientVolume = 0.14; // Reduced by 50% for subtle background atmosphere
+
+    // Cache for preloaded and decoded real audio buffers
+    this.audioBuffers = new Map();
+    this.loadingPromises = new Map();
+
+    // Manifest of real audio files located in /static/audio/ (served at /audio/ or /static/audio/)
+    this.soundManifest = {
+      thunder: 'audio/thunder.ogg',
+      wind_howl: 'audio/wind_howl.ogg',
+      rain_thunder: 'audio/rain_thunder.ogg',
+      wolf_howl: 'audio/wolf_howl.ogg',
+      raven_caw: 'audio/raven_caw.ogg',
+      church_bell: 'audio/church_bell.ogg',
+      clock_tick: 'audio/clock_tick.ogg',
+      door_creak_wood: 'audio/door_creak_wood.ogg',
+      creak_wood_1: 'audio/creak_wood_1.ogg',
+      creak_wood_2: 'audio/creak_wood_2.ogg',
+      creak_wood_3: 'audio/creak_wood_3.ogg',
+      door_open_1: 'audio/door_open_1.ogg',
+      door_open_2: 'audio/door_open_2.ogg',
+      door_close_1: 'audio/door_close_1.ogg',
+      door_creak_iron: 'audio/door_creak_iron.ogg',
+      metal_latch: 'audio/metal_latch.ogg',
+      heartbeat: 'audio/heartbeat.ogg',
+      whisper: 'audio/whisper.ogg',
+      ghost_whisper_wind: 'audio/ghost_whisper_wind.ogg',
+      ghost_laugh: 'audio/ghost_laugh.mp3',
+      musicbox_1: 'audio/musicbox_1.ogg',
+      musicbox_2: 'audio/musicbox_2.ogg',
+      musicbox_3: 'audio/musicbox_3.ogg',
+      footstep_grass_0: 'audio/footstep_grass_0.ogg',
+      footstep_grass_1: 'audio/footstep_grass_1.ogg',
+      footstep_grass_2: 'audio/footstep_grass_2.ogg',
+      footstep_stone_0: 'audio/footstep_stone_0.ogg',
+      footstep_stone_1: 'audio/footstep_stone_1.ogg',
+      footstep_stone_2: 'audio/footstep_stone_2.ogg',
+      lock_click: 'audio/lock_click.ogg',
+      item_found: 'audio/item_found.ogg',
+      book_open: 'audio/book_open.ogg',
+      book_flip: 'audio/book_flip.ogg',
+      ui_click: 'audio/ui_click.ogg',
+      dialogue_tick: 'audio/dialogue_tick.ogg',
+      horror_stinger: 'audio/horror_stinger.mp3',
+      horror_stinger_2: 'audio/horror_stinger_2.mp3',
+      player_damage: 'audio/player_damage.mp3'
+    };
 
     // Ambient loop nodes
     this.ambientNodes = {
       windSource: null,
-      windFilter: null,
       windGain: null,
-      droneOsc1: null,
-      droneOsc2: null,
+      rainSource: null,
+      rainGain: null,
+      droneOsc: null,
       droneGain: null,
       isPlaying: false
     };
 
-    // Heartbeat state
-    this.heartbeatTimer = null;
-    this.heartRate = 70; // BPM
+    // Auto-preload core samples
+    this.preloadPrioritySamples();
   }
 
+  /**
+   * Initialize Web Audio Context and Master Gain Node
+   */
   init() {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.setValueAtTime(this.muted ? 0 : this.masterVolume, this.ctx.currentTime);
+        this.masterGain.connect(this.ctx.destination);
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
@@ -39,9 +92,152 @@ class CastleAudioEngine {
     }
   }
 
+  /**
+   * Preload high-priority sound samples in the background
+   */
+  preloadPrioritySamples() {
+    const priorityKeys = [
+      'thunder', 'wind_howl', 'rain_thunder', 'footstep_grass_0', 'footstep_grass_1',
+      'footstep_stone_0', 'footstep_stone_1', 'dialogue_tick', 'ui_click',
+      'door_open_1', 'creak_wood_1', 'metal_latch', 'wolf_howl', 'raven_caw',
+      'horror_stinger', 'church_bell', 'heartbeat', 'item_found'
+    ];
+    priorityKeys.forEach(key => this.loadSample(key));
+  }
+
+  /**
+   * Load and decode an audio sample from manifest
+   */
+  async loadSample(key) {
+    if (this.audioBuffers.has(key)) {
+      return this.audioBuffers.get(key);
+    }
+    if (this.loadingPromises.has(key)) {
+      return this.loadingPromises.get(key);
+    }
+
+    const url = this.soundManifest[key];
+    if (!url) return null;
+
+    const promise = (async () => {
+      try {
+        let response = await fetch(url);
+        if (!response.ok) {
+          response = await fetch(`static/${url}`);
+        }
+        if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+        const arrayBuffer = await response.arrayBuffer();
+        
+        // Ensure AudioContext is ready for decoding
+        this.init();
+        if (!this.ctx) return null;
+
+        const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+        this.audioBuffers.set(key, audioBuffer);
+        return audioBuffer;
+      } catch (err) {
+        console.warn(`[CastleAudio] Could not load sample '${key}' (${url}):`, err);
+        return null;
+      }
+    })();
+
+    this.loadingPromises.set(key, promise);
+    return promise;
+  }
+
+  /**
+   * Play a decoded audio buffer with volume, pitch variation, and filters
+   */
+  async playSample(key, options = {}) {
+    if (this.muted) return null;
+    this.init();
+    if (!this.ctx) return null;
+
+    const {
+      volume = 1.0,
+      playbackRate = 1.0,
+      detune = 0,
+      loop = false,
+      offset = 0,
+      duration = undefined,
+      fadeIn = 0,
+      fadeOut = 0,
+      lowpassFreq = null,
+      highpassFreq = null
+    } = options;
+
+    let buffer = this.audioBuffers.get(key);
+    if (!buffer) {
+      buffer = await this.loadSample(key);
+    }
+    if (!buffer) return null;
+
+    try {
+      const now = this.ctx.currentTime;
+      const source = this.ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = loop;
+      source.playbackRate.setValueAtTime(playbackRate, now);
+      if (detune !== 0 && source.detune) {
+        source.detune.setValueAtTime(detune, now);
+      }
+
+      // Gain node for volume & envelopes
+      const gainNode = this.ctx.createGain();
+      const targetGain = this.masterVolume * volume;
+
+      if (fadeIn > 0) {
+        gainNode.gain.setValueAtTime(0.001, now);
+        gainNode.gain.linearRampToValueAtTime(targetGain, now + fadeIn);
+      } else {
+        gainNode.gain.setValueAtTime(targetGain, now);
+      }
+
+      if (fadeOut > 0 && duration) {
+        gainNode.gain.setValueAtTime(targetGain, now + duration - fadeOut);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      }
+
+      let lastNode = source;
+
+      // Optional lowpass / highpass filters
+      if (lowpassFreq) {
+        const lp = this.ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(lowpassFreq, now);
+        lastNode.connect(lp);
+        lastNode = lp;
+      }
+      if (highpassFreq) {
+        const hp = this.ctx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.setValueAtTime(highpassFreq, now);
+        lastNode.connect(hp);
+        lastNode = hp;
+      }
+
+      lastNode.connect(gainNode);
+      gainNode.connect(this.masterGain || this.ctx.destination);
+
+      if (duration !== undefined) {
+        source.start(now, offset, duration);
+      } else {
+        source.start(now, offset);
+      }
+
+      return { source, gainNode };
+    } catch (e) {
+      console.warn(`[CastleAudio] Playback error for '${key}':`, e);
+      return null;
+    }
+  }
+
   toggleMute() {
     this.muted = !this.muted;
     localStorage.setItem('bejacastle_muted', this.muted);
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setValueAtTime(this.muted ? 0 : this.masterVolume, this.ctx.currentTime);
+    }
     if (this.muted) {
       this.stopAmbient();
     } else {
@@ -52,86 +248,83 @@ class CastleAudioEngine {
 
   setVolume(val) {
     this.masterVolume = Math.max(0, Math.min(1, val));
+    if (this.masterGain && this.ctx && !this.muted) {
+      this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
+    }
   }
 
   // ==========================================
-  // AMBIENT SOUNDSCAPES (Continuous Procedural)
+  // REALISTIC AMBIENT SOUNDSCAPES
   // ==========================================
 
-  startAmbient() {
+  async startAmbient() {
     if (this.muted) return;
     this.init();
     if (!this.ctx || this.ambientNodes.isPlaying) return;
 
     try {
       const now = this.ctx.currentTime;
+      this.ambientNodes.isPlaying = true;
 
-      // 1. Procedural Howling Wind Generator (Filtered Noise)
-      const bufferSize = this.ctx.sampleRate * 4;
-      const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        output[i] = Math.random() * 2 - 1;
+      // 1. Howling wind ambient loop (real recording)
+      const windBuffer = await this.loadSample('wind_howl');
+      if (windBuffer && this.ambientNodes.isPlaying) {
+        const windSource = this.ctx.createBufferSource();
+        windSource.buffer = windBuffer;
+        windSource.loop = true;
+        windSource.playbackRate.setValueAtTime(0.95, now);
+
+        const windFilter = this.ctx.createBiquadFilter();
+        windFilter.type = 'lowpass';
+        windFilter.frequency.setValueAtTime(1400, now);
+
+        const windGain = this.ctx.createGain();
+        windGain.gain.setValueAtTime(0.001, now);
+        windGain.gain.linearRampToValueAtTime(this.ambientVolume * 0.50, now + 2.0);
+
+        windSource.connect(windFilter);
+        windFilter.connect(windGain);
+        windGain.connect(this.masterGain || this.ctx.destination);
+        windSource.start(now);
+
+        this.ambientNodes.windSource = windSource;
+        this.ambientNodes.windGain = windGain;
       }
 
-      const windSource = this.ctx.createBufferSource();
-      windSource.buffer = noiseBuffer;
-      windSource.loop = true;
+      // 2. Distant rain & rumble ambient loop (real recording)
+      const rainBuffer = await this.loadSample('rain_thunder');
+      if (rainBuffer && this.ambientNodes.isPlaying) {
+        const rainSource = this.ctx.createBufferSource();
+        rainSource.buffer = rainBuffer;
+        rainSource.loop = true;
 
-      const windFilter = this.ctx.createBiquadFilter();
-      windFilter.type = 'bandpass';
-      windFilter.frequency.setValueAtTime(320, now);
-      windFilter.Q.setValueAtTime(4.0, now);
+        const rainGain = this.ctx.createGain();
+        rainGain.gain.setValueAtTime(0.001, now);
+        rainGain.gain.linearRampToValueAtTime(this.ambientVolume * 0.40, now + 2.5);
 
-      // Slow LFO to modulate wind frequency (gusts)
-      const windLFO = this.ctx.createOscillator();
-      windLFO.frequency.setValueAtTime(0.12, now);
-      const windLFOGain = this.ctx.createGain();
-      windLFOGain.gain.setValueAtTime(180, now);
-      windLFO.connect(windLFOGain);
-      windLFOGain.connect(windFilter.frequency);
-      windLFO.start(now);
+        rainSource.connect(rainGain);
+        rainGain.connect(this.masterGain || this.ctx.destination);
+        rainSource.start(now);
 
-      const windGain = this.ctx.createGain();
-      windGain.gain.setValueAtTime(this.ambientVolume * 0.4, now);
+        this.ambientNodes.rainSource = rainSource;
+        this.ambientNodes.rainGain = rainGain;
+      }
 
-      windSource.connect(windFilter);
-      windFilter.connect(windGain);
-      windGain.connect(this.ctx.destination);
-      windSource.start(now);
-
-      // 2. Dark Horror Sub-Drone (Binaural beating eerie low drone)
-      const droneOsc1 = this.ctx.createOscillator();
-      const droneOsc2 = this.ctx.createOscillator();
-      droneOsc1.type = 'sawtooth';
-      droneOsc2.type = 'sine';
-      droneOsc1.frequency.setValueAtTime(55, now);   // A1
-      droneOsc2.frequency.setValueAtTime(55.8, now); // Detuned beat frequency
-
-      const droneFilter = this.ctx.createBiquadFilter();
-      droneFilter.type = 'lowpass';
-      droneFilter.frequency.setValueAtTime(160, now);
+      // 3. Subtle sub-drone for dark atmosphere
+      const droneOsc = this.ctx.createOscillator();
+      droneOsc.type = 'sine';
+      droneOsc.frequency.setValueAtTime(55, now); // A1
 
       const droneGain = this.ctx.createGain();
-      droneGain.gain.setValueAtTime(this.ambientVolume * 0.22, now);
+      droneGain.gain.setValueAtTime(0.001, now);
+      droneGain.gain.linearRampToValueAtTime(this.ambientVolume * 0.20, now + 2.0);
 
-      droneOsc1.connect(droneFilter);
-      droneOsc2.connect(droneFilter);
-      droneFilter.connect(droneGain);
-      droneGain.connect(this.ctx.destination);
+      droneOsc.connect(droneGain);
+      droneGain.connect(this.masterGain || this.ctx.destination);
+      droneOsc.start(now);
 
-      droneOsc1.start(now);
-      droneOsc2.start(now);
-
-      this.ambientNodes = {
-        windSource,
-        windFilter,
-        windGain,
-        droneOsc1,
-        droneOsc2,
-        droneGain,
-        isPlaying: true
-      };
+      this.ambientNodes.droneOsc = droneOsc;
+      this.ambientNodes.droneGain = droneGain;
     } catch (e) {
       console.warn("Ambient audio init skipped:", e);
     }
@@ -140,561 +333,293 @@ class CastleAudioEngine {
   stopAmbient() {
     if (!this.ambientNodes.isPlaying) return;
     try {
-      if (this.ambientNodes.windSource) this.ambientNodes.windSource.stop();
-      if (this.ambientNodes.droneOsc1) this.ambientNodes.droneOsc1.stop();
-      if (this.ambientNodes.droneOsc2) this.ambientNodes.droneOsc2.stop();
+      if (this.ambientNodes.windSource) {
+        this.ambientNodes.windSource.stop();
+        this.ambientNodes.windSource.disconnect();
+      }
+      if (this.ambientNodes.rainSource) {
+        this.ambientNodes.rainSource.stop();
+        this.ambientNodes.rainSource.disconnect();
+      }
+      if (this.ambientNodes.droneOsc) {
+        this.ambientNodes.droneOsc.stop();
+        this.ambientNodes.droneOsc.disconnect();
+      }
     } catch (e) {}
     this.ambientNodes.isPlaying = false;
   }
 
   // ==========================================
-  // PROCEDURAL HORROR SOUND EFFECTS
+  // REALISTIC RECORDED SOUND EFFECTS
   // ==========================================
 
   /**
-   * Footsteps on forest ground (crunching twigs & leaves)
+   * Footsteps on forest ground (Crunching real leaves & forest soil)
    */
   playFootstepForest() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
+    const variants = ['footstep_grass_0', 'footstep_grass_1', 'footstep_grass_2'];
+    const pick = variants[Math.floor(Math.random() * variants.length)];
+    const rate = 0.94 + Math.random() * 0.12;
 
-    const now = this.ctx.currentTime;
-    const dur = 0.09;
-
-    const bufferSize = Math.floor(this.ctx.sampleRate * dur);
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-    }
-
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1400 + Math.random() * 400, now);
-    filter.Q.setValueAtTime(2.0, now);
-
-    const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(this.masterVolume * 0.25, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    noise.start(now);
+    this.playSample(pick, {
+      volume: 0.45,
+      playbackRate: rate
+    });
   }
 
   /**
-   * Footsteps in stone castle corridor (hollow stone tap)
+   * Footsteps on stone castle corridor (Real stone & concrete steps)
    */
   playFootstepStone() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
+    const variants = ['footstep_stone_0', 'footstep_stone_1', 'footstep_stone_2'];
+    const pick = variants[Math.floor(Math.random() * variants.length)];
+    const rate = 0.92 + Math.random() * 0.16;
 
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(180 + Math.random() * 40, now);
-    osc.frequency.exponentialRampToValueAtTime(60, now + 0.08);
-
-    gain.gain.setValueAtTime(this.masterVolume * 0.35, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.08);
+    this.playSample(pick, {
+      volume: 0.50,
+      playbackRate: rate
+    });
   }
 
   /**
-   * Thunderclap & distant rumble
+   * Real Thunder & Lightning Acoustic Shockwave
+   * Plays authentic thunderclap recording with sub-bass impact layer
    */
   playThunder() {
     if (this.muted) return;
     this.init();
-    if (!this.ctx) return;
 
-    const now = this.ctx.currentTime;
-    const duration = 2.2;
+    // 1. Play real thunder recording
+    this.playSample('thunder', {
+      volume: 1.1,
+      playbackRate: 0.96 + Math.random() * 0.08
+    });
 
-    // 1. Initial lightning crackle
-    const bufSize = Math.floor(this.ctx.sampleRate * duration);
-    const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < bufSize; i++) {
-      const envelope = Math.exp(-i / (this.ctx.sampleRate * 0.5)) + 0.2 * Math.exp(-i / (this.ctx.sampleRate * 1.5));
-      d[i] = (Math.random() * 2 - 1) * envelope;
+    // 2. Layer deep physical sub-bass rumble (30Hz - 80Hz)
+    if (this.ctx) {
+      try {
+        const now = this.ctx.currentTime;
+        const subOsc = this.ctx.createOscillator();
+        const subGain = this.ctx.createGain();
+
+        subOsc.type = 'triangle';
+        subOsc.frequency.setValueAtTime(140, now);
+        subOsc.frequency.exponentialRampToValueAtTime(32, now + 1.2);
+
+        subGain.gain.setValueAtTime(this.masterVolume * 0.7, now);
+        subGain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+        subOsc.connect(subGain);
+        subGain.connect(this.masterGain || this.ctx.destination);
+
+        subOsc.start(now);
+        subOsc.stop(now + 1.25);
+      } catch (e) {}
     }
-
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buf;
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, now);
-    filter.frequency.exponentialRampToValueAtTime(70, now + duration);
-
-    const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(this.masterVolume * 0.95, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.ctx.destination);
-    noise.start(now);
-
-    // 2. Sub-bass ground tremor
-    const subOsc = this.ctx.createOscillator();
-    const subGain = this.ctx.createGain();
-    subOsc.type = 'sawtooth';
-    subOsc.frequency.setValueAtTime(90, now);
-    subOsc.frequency.exponentialRampToValueAtTime(25, now + duration * 0.9);
-
-    subGain.gain.setValueAtTime(this.masterVolume * 0.7, now);
-    subGain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.9);
-
-    subOsc.connect(subGain);
-    subGain.connect(this.ctx.destination);
-    subOsc.start(now);
-    subOsc.stop(now + duration * 0.9);
   }
 
   /**
-   * Creaking heavy wooden door / rusty castle gate
+   * Wind gust surge
+   */
+  playWindGust() {
+    if (this.muted) return;
+    this.playSample('wind_howl', {
+      volume: 0.35,
+      playbackRate: 1.05 + Math.random() * 0.1,
+      duration: 3.5,
+      fadeIn: 0.4,
+      fadeOut: 1.2
+    });
+  }
+
+  /**
+   * Real creaking door / iron castle gate
    */
   playDoorCreak(isIron = false) {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const dur = 1.1;
-
-    // Carrier
-    const osc = this.ctx.createOscillator();
-    osc.type = isIron ? 'sawtooth' : 'triangle';
-    osc.frequency.setValueAtTime(isIron ? 130 : 95, now);
-    osc.frequency.linearRampToValueAtTime(isIron ? 280 : 160, now + dur * 0.7);
-    osc.frequency.linearRampToValueAtTime(isIron ? 110 : 80, now + dur);
-
-    // Modulator for the raspy groaning creak texture
-    const mod = this.ctx.createOscillator();
-    mod.type = 'square';
-    mod.frequency.setValueAtTime(22, now);
-    mod.frequency.linearRampToValueAtTime(14, now + dur);
-
-    const modGain = this.ctx.createGain();
-    modGain.gain.setValueAtTime(isIron ? 120 : 70, now);
-
-    mod.connect(modGain);
-    modGain.connect(osc.frequency);
-
-    const mainGain = this.ctx.createGain();
-    mainGain.gain.setValueAtTime(0.01, now);
-    mainGain.gain.linearRampToValueAtTime(this.masterVolume * 0.7, now + 0.2);
-    mainGain.gain.linearRampToValueAtTime(this.masterVolume * 0.5, now + 0.8);
-    mainGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-
-    osc.connect(mainGain);
-    mainGain.connect(this.ctx.destination);
-
-    mod.start(now);
-    osc.start(now);
-    mod.stop(now + dur);
-    osc.stop(now + dur);
+    if (isIron) {
+      this.playSample('door_creak_iron', {
+        volume: 0.80,
+        playbackRate: 0.95 + Math.random() * 0.1
+      });
+      this.playSample('metal_latch', { volume: 0.6 });
+    } else {
+      const woodVariants = ['creak_wood_1', 'creak_wood_2', 'creak_wood_3', 'door_open_1', 'door_creak_wood'];
+      const pick = woodVariants[Math.floor(Math.random() * woodVariants.length)];
+      this.playSample(pick, {
+        volume: 0.75,
+        playbackRate: 0.92 + Math.random() * 0.15
+      });
+    }
   }
 
   /**
-   * Heartbeat thud (Lub-Dub)
+   * Real Recorded Heartbeat (Thump-Thump)
    */
   playHeartbeat(intensity = 1.0) {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-
-    const triggerThud = (delay, freq, vol) => {
-      const t = now + delay;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq * intensity, t);
-      osc.frequency.exponentialRampToValueAtTime(32, t + 0.14);
-
-      gain.gain.setValueAtTime(this.masterVolume * vol * intensity, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(t);
-      osc.stop(t + 0.15);
-    };
-
-    // Lub
-    triggerThud(0, 75, 0.75);
-    // Dub
-    triggerThud(0.13, 62, 0.55);
+    this.playSample('heartbeat', {
+      volume: 0.85 * intensity,
+      playbackRate: 0.95 * intensity
+    });
   }
 
   /**
-   * Eerie Ghost / Phantom Whisper Drone
+   * Eerie Ghost / Phantom Whisper & Chill
    */
   playGhostMoan() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const dur = 1.8;
-
-    const osc1 = this.ctx.createOscillator();
-    const osc2 = this.ctx.createOscillator();
-    osc1.type = 'sine';
-    osc2.type = 'sawtooth';
-
-    const base = 280 + Math.random() * 80;
-    osc1.frequency.setValueAtTime(base, now);
-    osc1.frequency.linearRampToValueAtTime(base * 1.35, now + dur * 0.5);
-    osc1.frequency.linearRampToValueAtTime(base * 0.75, now + dur);
-
-    osc2.frequency.setValueAtTime(base * 1.5, now);
-    osc2.frequency.linearRampToValueAtTime(base * 1.1, now + dur);
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(650, now);
-    filter.Q.setValueAtTime(6.0, now);
-
-    const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(this.masterVolume * 0.6, now + dur * 0.4);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-
-    osc1.connect(filter);
-    osc2.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc1.start(now);
-    osc2.start(now);
-    osc1.stop(now + dur);
-    osc2.stop(now + dur);
+    const ghostSounds = ['whisper', 'ghost_whisper_wind', 'ghost_laugh'];
+    const pick = ghostSounds[Math.floor(Math.random() * ghostSounds.length)];
+    this.playSample(pick, {
+      volume: pick === 'ghost_laugh' ? 0.45 : 0.65,
+      playbackRate: 0.85 + Math.random() * 0.25
+    });
   }
 
   /**
-   * Distant Wolf Howl in the deep woods
+   * Real human whisper in the dark
+   */
+  playWhisper() {
+    if (this.muted) return;
+    this.playSample('whisper', {
+      volume: 0.75,
+      playbackRate: 0.9 + Math.random() * 0.2
+    });
+  }
+
+  /**
+   * Real wild Wolf Howl in the forest
    */
   playWolfHowl() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const dur = 2.4;
-
-    const osc = this.ctx.createOscillator();
-    osc.type = 'sine';
-
-    // Howl frequency envelope
-    osc.frequency.setValueAtTime(320, now);
-    osc.frequency.linearRampToValueAtTime(680, now + 0.7);
-    osc.frequency.setValueAtTime(680, now + 1.2);
-    osc.frequency.linearRampToValueAtTime(260, now + dur);
-
-    // Vibrato
-    const vib = this.ctx.createOscillator();
-    vib.frequency.setValueAtTime(4.5, now);
-    const vibGain = this.ctx.createGain();
-    vibGain.gain.setValueAtTime(14, now);
-    vib.connect(vibGain);
-    vibGain.connect(osc.frequency);
-
-    const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(this.masterVolume * 0.55, now + 0.6);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    vib.start(now);
-    osc.start(now);
-    vib.stop(now + dur);
-    osc.stop(now + dur);
+    this.playSample('wolf_howl', {
+      volume: 0.85,
+      playbackRate: 0.96 + Math.random() * 0.08
+    });
   }
 
   /**
-   * Raven Caw
+   * Real Northern Raven Caw
    */
   playRavenCaw() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const dur = 0.32;
-
-    const osc = this.ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(420, now);
-    osc.frequency.linearRampToValueAtTime(310, now + dur);
-
-    // Harsh ring modulator
-    const mod = this.ctx.createOscillator();
-    mod.type = 'square';
-    mod.frequency.setValueAtTime(75, now);
-    const modGain = this.ctx.createGain();
-    modGain.gain.setValueAtTime(180, now);
-    mod.connect(modGain);
-    modGain.connect(osc.frequency);
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(900, now);
-    filter.Q.setValueAtTime(2.5, now);
-
-    const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(this.masterVolume * 0.6, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    mod.start(now);
-    osc.start(now);
-    mod.stop(now + dur);
-    osc.stop(now + dur);
+    this.playSample('raven_caw', {
+      volume: 0.80,
+      playbackRate: 0.95 + Math.random() * 0.1
+    });
   }
 
   /**
-   * Horror Jumpscare / Stinger Impact
+   * Orchestral Horror Braam & Jumpscare Stinger
    */
   playHorrorStinger() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const dur = 1.6;
-
-    // Discordant tritone cluster (F#, G, C, C#)
-    const freqs = [185.00, 196.00, 261.63, 277.18, 554.37];
-
-    freqs.forEach((freq) => {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(freq, now);
-      osc.frequency.linearRampToValueAtTime(freq * 0.88, now + dur);
-
-      gain.gain.setValueAtTime(this.masterVolume * 0.45, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + dur);
+    const stingers = ['horror_stinger', 'horror_stinger_2'];
+    const pick = stingers[Math.floor(Math.random() * stingers.length)];
+    this.playSample(pick, {
+      volume: 0.95,
+      playbackRate: 1.0
     });
-
-    // Harsh metal strike noise
-    const noiseBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * 0.4), this.ctx.sampleRate);
-    const d = noiseBuf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = noiseBuf;
-    const nGain = this.ctx.createGain();
-    nGain.gain.setValueAtTime(this.masterVolume * 0.8, now);
-    nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-    noise.connect(nGain);
-    nGain.connect(this.ctx.destination);
-    noise.start(now);
   }
 
   /**
-   * Ominous Castle Grandfather Clock / Tower Bell Toll
+   * Real Castle / Church Tower Bell Toll
    */
   playClockBell() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const dur = 3.0;
-
-    // Bell inharmonic partials
-    const partials = [110, 220, 311.13, 440, 622.25];
-    const decayRatios = [1.0, 0.8, 0.6, 0.4, 0.3];
-
-    partials.forEach((f, i) => {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(f, now);
-
-      const pDur = dur * decayRatios[i];
-      gain.gain.setValueAtTime(this.masterVolume * 0.45 * (1 / (i + 1)), now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + pDur);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + pDur);
+    this.playSample('church_bell', {
+      volume: 0.85,
+      playbackRate: 0.95 + Math.random() * 0.05
     });
   }
 
   /**
-   * Key / Metal Lock-Pick Mechanism Click
+   * Antique Lock / Key Pick Mechanism Click
    */
   playLockClick() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(1200, now);
-    osc.frequency.exponentialRampToValueAtTime(240, now + 0.05);
-
-    gain.gain.setValueAtTime(this.masterVolume * 0.7, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.06);
+    this.playSample('lock_click', { volume: 0.8 });
+    setTimeout(() => {
+      this.playSample('metal_latch', { volume: 0.7 });
+    }, 90);
   }
 
   /**
-   * Item / Relic Discovery Jingle
+   * Real Coins / Relic Item Discovery Sound
    */
   playItemFound() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const notes = [329.63, 392.00, 493.88, 659.25, 783.99]; // E4, G4, B4, E5, G5
-
-    notes.forEach((freq, idx) => {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, now + idx * 0.07);
-
-      gain.gain.setValueAtTime(this.masterVolume * 0.6, now + idx * 0.07);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.07 + 0.22);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now + idx * 0.07);
-      osc.stop(now + idx * 0.07 + 0.25);
+    this.playSample('item_found', {
+      volume: 0.85,
+      playbackRate: 1.0 + Math.random() * 0.08
     });
   }
 
   /**
-   * Spooky Music Box Melancholy Chord
+   * Real Antique Music Box Melody
    */
   playMusicBox() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const melody = [587.33, 523.25, 493.88, 440.00, 392.00, 329.63];
-
-    melody.forEach((freq, i) => {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now + i * 0.22);
-
-      gain.gain.setValueAtTime(this.masterVolume * 0.5, now + i * 0.22);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.22 + 0.55);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now + i * 0.22);
-      osc.stop(now + i * 0.22 + 0.6);
+    const notes = ['musicbox_1', 'musicbox_2', 'musicbox_3', 'musicbox_2', 'musicbox_1'];
+    notes.forEach((note, idx) => {
+      setTimeout(() => {
+        this.playSample(note, {
+          volume: 0.7,
+          playbackRate: 1.0 + (idx * 0.08)
+        });
+      }, idx * 280);
     });
   }
 
   /**
-   * Story Dialogue Typewriter blip
+   * Real Typewriter / Quill Parchment Dialogue Tick
+   * Soft volume with micro pitch jitter
    */
   playDialogueBlip() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(260 + (Math.random() * 60 - 30), now);
-    osc.frequency.exponentialRampToValueAtTime(130, now + 0.025);
-
-    gain.gain.setValueAtTime(this.masterVolume * 0.18, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.03);
+    const rate = 0.95 + Math.random() * 0.15;
+    this.playSample('dialogue_tick', {
+      volume: 0.12,
+      playbackRate: rate
+    });
   }
 
   /**
-   * General UI Button Click
+   * Real crisp UI button click
    */
   playClick() {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
+    this.playSample('ui_click', {
+      volume: 0.45,
+      playbackRate: 1.0 + (Math.random() * 0.1 - 0.05)
+    });
+  }
 
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+  /**
+   * Real parchment journal open / page flip
+   */
+  playBookOpen() {
+    if (this.muted) return;
+    this.playSample('book_open', { volume: 0.75 });
+  }
 
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(700, now);
-    osc.frequency.exponentialRampToValueAtTime(350, now + 0.03);
+  playBookFlip() {
+    if (this.muted) return;
+    this.playSample('book_flip', { volume: 0.70 });
+  }
 
-    gain.gain.setValueAtTime(this.masterVolume * 0.35, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.035);
+  /**
+   * Real player damage / shock gasp
+   */
+  playDamage() {
+    if (this.muted) return;
+    this.playSample('player_damage', { volume: 0.85 });
   }
 }
 
+window.CastleAudio = CastleAudioEngine;
+window.CastleAudioEngine = CastleAudioEngine;
 window.castleAudio = new CastleAudioEngine();

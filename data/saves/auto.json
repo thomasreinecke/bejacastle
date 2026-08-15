@@ -1,0 +1,58 @@
+{
+  "slot": "auto",
+  "title": "Neues Spiel gestartet",
+  "chapterIndex": 0,
+  "chapterName": "KAPITEL I: DER VERFLUCHTE WALD",
+  "gameTimeSec": 0,
+  "timestamp": "15.8.2026, 17:47:48",
+  "player": {
+    "x": 90,
+    "y": 260,
+    "facing": "RIGHT",
+    "hasLantern": false,
+    "sanity": 100,
+    "inventory": []
+  },
+  "entities": [
+    {
+      "id": "lantern_pickup",
+      "type": "item",
+      "collected": false,
+      "activated": false,
+      "lit": false,
+      "locked": false
+    },
+    {
+      "id": "monolith_1",
+      "type": "puzzle_monolith",
+      "collected": false,
+      "activated": false,
+      "lit": false,
+      "locked": false
+    },
+    {
+      "id": "monolith_2",
+      "type": "puzzle_monolith",
+      "collected": false,
+      "activated": false,
+      "lit": false,
+      "locked": false
+    },
+    {
+      "id": "tree_lore",
+      "type": "lore",
+      "collected": false,
+      "activated": false,
+      "lit": false,
+      "locked": false
+    },
+    {
+      "id": "exit_staircase",
+      "type": "door",
+      "collected": false,
+      "activated": false,
+      "lit": false,
+      "locked": true
+    }
+  ]
+}

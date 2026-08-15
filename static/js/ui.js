@@ -1,361 +1,506 @@
 /**
- * Bejacastle - UI, Modals, Soundboard & Theme Manager
+ * Bejacastle - UI Manager & Gothic Menu System
+ * Handles Title Screen, Multi-Slot Save/Load Manager, Journal, Soundboard & Settings.
  */
 
 class CastleUI {
-  constructor() {
-    this.game = null;
-    this.discoveredDiaries = [];
-    this.initEventListeners();
+  constructor(game) {
+    this.game = game;
+    this.latestSave = null;
+
+    this.cacheElements();
+    this.bindEvents();
+    this.fetchSavesList();
   }
 
-  setGame(gameInstance) {
-    this.game = gameInstance;
+  cacheElements() {
+    this.titleScreen = document.getElementById('titleScreenOverlay');
+    this.btnResume = document.getElementById('btnResumeGame');
+    this.btnNewGame = document.getElementById('btnNewGame');
+    this.btnOpenSaves = document.getElementById('btnOpenSaves');
+    this.btnTitleSound = document.getElementById('btnTitleSound');
+
+    this.saveModal = document.getElementById('saveManagerModal');
+    this.saveSlotsContainer = document.getElementById('saveSlotsContainer');
+    this.btnSaveCurrent = document.getElementById('btnSaveCurrent');
+    this.btnCloseSaves = document.getElementById('btnCloseSaves');
+
+    this.soundModal = document.getElementById('soundTestModal');
+    this.journalModal = document.getElementById('journalModal');
+    this.settingsModal = document.getElementById('settingsModal');
+    this.endingModal = document.getElementById('endingChoiceModal');
+    this.epilogueModal = document.getElementById('epilogueModal');
+
+    this.toastNotification = document.getElementById('toastNotification');
+    this.chapterBanner = document.getElementById('chapterBannerText');
+    this.inventoryContainer = document.getElementById('inventorySlotsContainer');
+    this.sanityBar = document.getElementById('sanityFillBar');
+    this.sanityValueText = document.getElementById('sanityValueText');
+    this.sanityHeart = document.getElementById('sanityHeartIcon');
   }
 
-  initEventListeners() {
-    // Soundboard Modal
-    const soundboardBtn = document.getElementById('soundboardBtn');
-    const soundboardModal = document.getElementById('soundboardModal');
-    const closeSoundboardBtn = document.getElementById('closeSoundboardBtn');
-
-    if (soundboardBtn && soundboardModal) {
-      soundboardBtn.addEventListener('click', () => {
+  bindEvents() {
+    // Title Screen buttons
+    if (this.btnResume) {
+      this.btnResume.addEventListener('click', () => {
         if (window.castleAudio) window.castleAudio.playClick();
-        soundboardModal.classList.remove('hidden');
+        const slot = localStorage.getItem('bejacastle_latest_slot') || 'auto';
+        this.game.loadGame(slot);
       });
     }
 
-    if (closeSoundboardBtn && soundboardModal) {
-      closeSoundboardBtn.addEventListener('click', () => {
+    if (this.btnNewGame) {
+      this.btnNewGame.addEventListener('click', () => {
         if (window.castleAudio) window.castleAudio.playClick();
-        soundboardModal.classList.add('hidden');
+        this.game.startNewGame();
       });
     }
 
-    // Journal Modal
-    const journalBtn = document.getElementById('journalBtn');
-    const journalModal = document.getElementById('journalModal');
-    const closeJournalBtn = document.getElementById('closeJournalBtn');
-
-    if (journalBtn && journalModal) {
-      journalBtn.addEventListener('click', () => {
+    if (this.btnOpenSaves) {
+      this.btnOpenSaves.addEventListener('click', () => {
         if (window.castleAudio) window.castleAudio.playClick();
-        this.renderJournalList();
-        journalModal.classList.remove('hidden');
+        this.openSaveManager();
       });
     }
 
-    if (closeJournalBtn && journalModal) {
-      closeJournalBtn.addEventListener('click', () => {
+    if (this.btnTitleSound) {
+      this.btnTitleSound.addEventListener('click', () => {
         if (window.castleAudio) window.castleAudio.playClick();
-        journalModal.classList.add('hidden');
+        this.openSoundboard();
       });
     }
 
-    // Settings Modal
-    const settingsBtn = document.getElementById('settingsBtn');
-    const settingsModal = document.getElementById('settingsModal');
-    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-
-    if (settingsBtn && settingsModal) {
-      settingsBtn.addEventListener('click', () => {
+    // In-game top bar buttons
+    const btnHudSave = document.getElementById('hudSaveBtn');
+    if (btnHudSave) {
+      btnHudSave.addEventListener('click', () => {
         if (window.castleAudio) window.castleAudio.playClick();
-        settingsModal.classList.remove('hidden');
+        this.openSaveManager();
       });
     }
 
-    if (closeSettingsBtn && settingsModal) {
-      closeSettingsBtn.addEventListener('click', () => {
+    const btnHudJournal = document.getElementById('hudJournalBtn');
+    if (btnHudJournal) {
+      btnHudJournal.addEventListener('click', () => {
         if (window.castleAudio) window.castleAudio.playClick();
-        settingsModal.classList.add('hidden');
+        this.toggleJournal();
       });
     }
 
-    // Highscores Modal
-    const highscoreBtn = document.getElementById('highscoreBtn');
-    const highscoreModal = document.getElementById('highscoreModal');
-    const closeHighscoreBtn = document.getElementById('closeHighscoreBtn');
-
-    if (highscoreBtn && highscoreModal) {
-      highscoreBtn.addEventListener('click', () => {
+    const btnHudSound = document.getElementById('hudSoundBtn');
+    if (btnHudSound) {
+      btnHudSound.addEventListener('click', () => {
         if (window.castleAudio) window.castleAudio.playClick();
-        this.fetchAndDisplayHighscores();
-        highscoreModal.classList.remove('hidden');
+        this.openSoundboard();
       });
     }
 
-    if (closeHighscoreBtn && highscoreModal) {
-      closeHighscoreBtn.addEventListener('click', () => {
+    const btnHudSettings = document.getElementById('hudSettingsBtn');
+    if (btnHudSettings) {
+      btnHudSettings.addEventListener('click', () => {
         if (window.castleAudio) window.castleAudio.playClick();
-        highscoreModal.classList.add('hidden');
+        this.openSettings();
       });
     }
 
-    // Sound toggle button
-    const soundBtn = document.getElementById('soundBtn');
-    if (soundBtn) {
-      soundBtn.addEventListener('click', () => {
+    const btnHudFullscreen = document.getElementById('hudFullscreenBtn');
+    if (btnHudFullscreen) {
+      btnHudFullscreen.addEventListener('click', () => {
+        if (window.castleAudio) window.castleAudio.playClick();
+        if (!document.fullscreenElement) {
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          } else if (document.documentElement.webkitRequestFullscreen) {
+            document.documentElement.webkitRequestFullscreen();
+          }
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+          }
+        }
+      });
+
+      document.addEventListener('fullscreenchange', () => {
+        btnHudFullscreen.textContent = document.fullscreenElement ? '✕ FENSTER' : '⛶ VOLLBILD';
+      });
+    }
+
+    // Modal close buttons
+    if (this.btnCloseSaves) {
+      this.btnCloseSaves.addEventListener('click', () => {
+        this.saveModal.classList.add('hidden');
+      });
+    }
+
+    const btnCloseSound = document.getElementById('btnCloseSoundModal');
+    if (btnCloseSound) {
+      btnCloseSound.addEventListener('click', () => {
+        this.soundModal.classList.add('hidden');
+      });
+    }
+
+    const btnCloseJournal = document.getElementById('btnCloseJournalModal');
+    if (btnCloseJournal) {
+      btnCloseJournal.addEventListener('click', () => {
+        this.journalModal.classList.add('hidden');
+      });
+    }
+
+    const btnCloseSettings = document.getElementById('btnCloseSettingsModal');
+    if (btnCloseSettings) {
+      btnCloseSettings.addEventListener('click', () => {
+        this.settingsModal.classList.add('hidden');
+      });
+    }
+
+    // Soundboard trigger buttons
+    document.querySelectorAll('[data-sound-trigger]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const soundType = e.currentTarget.getAttribute('data-sound-trigger');
         if (window.castleAudio) {
-          const isMuted = window.castleAudio.toggleMute();
-          soundBtn.textContent = isMuted ? '🔇 SOUND: AUS' : '🔊 SOUND: AN';
-          soundBtn.classList.toggle('active', !isMuted);
+          if (soundType === 'wind') window.castleAudio.playWindGust();
+          if (soundType === 'thunder') {
+            if (this.game && this.game.triggerLightningStorm) {
+              this.game.triggerLightningStorm();
+            } else if (window.castleAudio) {
+              window.castleAudio.playThunder();
+            }
+          }
+          if (soundType === 'door_wood') window.castleAudio.playDoorCreak(false);
+          if (soundType === 'door_iron') window.castleAudio.playDoorCreak(true);
+          if (soundType === 'foot_forest') window.castleAudio.playFootstepForest();
+          if (soundType === 'foot_stone') window.castleAudio.playFootstepStone();
+          if (soundType === 'ghost') window.castleAudio.playGhostMoan();
+          if (soundType === 'whisper') window.castleAudio.playWhisper();
+          if (soundType === 'wolf') window.castleAudio.playWolfHowl();
+          if (soundType === 'raven') window.castleAudio.playRavenCaw();
+          if (soundType === 'jumpscare') window.castleAudio.playHorrorStinger();
+          if (soundType === 'heartbeat') window.castleAudio.playHeartbeat(1.4);
+          if (soundType === 'clock') window.castleAudio.playClockBell();
+          if (soundType === 'musicbox') window.castleAudio.playMusicBox();
         }
       });
-    }
-
-    // Chapter restart button
-    const restartBtn = document.getElementById('restartBtn');
-    if (restartBtn) {
-      restartBtn.addEventListener('click', () => {
-        if (confirm("Möchtest du das aktuelle Kapitel neu starten?")) {
-          if (this.game) this.game.loadChapter(this.game.chapterIndex);
-        }
-      });
-    }
-
-    // Theme selector
-    const themeSelect = document.getElementById('themeSelect');
-    if (themeSelect) {
-      themeSelect.addEventListener('change', (e) => {
-        document.documentElement.setAttribute('data-theme', e.target.value);
-        localStorage.setItem('bejacastle_theme', e.target.value);
-      });
-
-      const savedTheme = localStorage.getItem('bejacastle_theme') || 'spooky-emerald';
-      themeSelect.value = savedTheme;
-      document.documentElement.setAttribute('data-theme', savedTheme);
-    }
-
-    // CRT Scanlines toggle
-    const crtToggle = document.getElementById('crtToggle');
-    const crtScreen = document.getElementById('crtScreen');
-    if (crtToggle && crtScreen) {
-      crtToggle.addEventListener('change', (e) => {
-        crtScreen.classList.toggle('crt-screen', e.target.checked);
-        crtScreen.classList.toggle('crt-curve', e.target.checked);
-      });
-    }
-
-    // Setup Soundboard Play Buttons
-    this.setupSoundboardButtons();
-
-    // Setup Touch D-Pad
-    this.setupTouchControls();
-  }
-
-  setupSoundboardButtons() {
-    const soundMappings = [
-      { id: 'sb_wind', action: () => window.castleAudio.startAmbient() },
-      { id: 'sb_thunder', action: () => window.castleAudio.playThunder() },
-      { id: 'sb_door_wood', action: () => window.castleAudio.playDoorCreak(false) },
-      { id: 'sb_door_iron', action: () => window.castleAudio.playDoorCreak(true) },
-      { id: 'sb_heartbeat', action: () => window.castleAudio.playHeartbeat(1.4) },
-      { id: 'sb_ghost', action: () => window.castleAudio.playGhostMoan() },
-      { id: 'sb_wolf', action: () => window.castleAudio.playWolfHowl() },
-      { id: 'sb_raven', action: () => window.castleAudio.playRavenCaw() },
-      { id: 'sb_stinger', action: () => window.castleAudio.playHorrorStinger() },
-      { id: 'sb_clock', action: () => window.castleAudio.playClockBell() },
-      { id: 'sb_musicbox', action: () => window.castleAudio.playMusicBox() },
-      { id: 'sb_item', action: () => window.castleAudio.playItemFound() }
-    ];
-
-    soundMappings.forEach(item => {
-      const btn = document.getElementById(item.id);
-      if (btn) {
-        btn.addEventListener('click', () => {
-          if (window.castleAudio) item.action();
-        });
-      }
     });
-  }
 
-  setupTouchControls() {
-    const bindBtn = (id, key) => {
-      const el = document.getElementById(id);
-      if (!el || !this.game) return;
-      el.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        this.game.keys[key] = true;
+    // Ending selections
+    document.querySelectorAll('[data-ending-choice]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const choice = e.currentTarget.getAttribute('data-ending-choice');
+        this.handleEndingSelection(choice);
       });
-      el.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        this.game.keys[key] = false;
-      });
-      el.addEventListener('mousedown', () => { this.game.keys[key] = true; });
-      el.addEventListener('mouseup', () => { this.game.keys[key] = false; });
-    };
+    });
 
-    bindBtn('touchUp', 'up');
-    bindBtn('touchDown', 'down');
-    bindBtn('touchLeft', 'left');
-    bindBtn('touchRight', 'right');
-
-    const actionTouch = document.getElementById('touchAction');
-    if (actionTouch) {
-      actionTouch.addEventListener('click', () => {
-        if (this.game) this.game.handleActionKey();
+    const btnRestartEpilogue = document.getElementById('btnRestartGameEpilogue');
+    if (btnRestartEpilogue) {
+      btnRestartEpilogue.addEventListener('click', () => {
+        this.epilogueModal.classList.add('hidden');
+        this.game.startNewGame();
       });
     }
+  }
+
+  enableResumeButton(saveData) {
+    this.latestSave = saveData;
+    if (this.btnResume) {
+      this.btnResume.disabled = false;
+      this.btnResume.classList.remove('opacity-40', 'cursor-not-allowed');
+      this.btnResume.classList.add('btn-primary');
+      const timeStr = saveData.timestamp || 'Vor kurzem';
+      const chStr = saveData.chapterName || 'Kapitel I';
+      this.btnResume.innerHTML = `<span>▶ WEITERSPIELEN</span> <span class="text-xs font-normal opacity-80 block text-gold">(${chStr} • ${timeStr})</span>`;
+    }
+  }
+
+  showNotification(msg) {
+    if (!this.toastNotification) return;
+    this.toastNotification.textContent = msg;
+    this.toastNotification.classList.remove('opacity-0', 'pointer-events-none');
+    this.toastNotification.classList.add('opacity-100');
+
+    clearTimeout(this.toastTimeout);
+    this.toastTimeout = setTimeout(() => {
+      this.toastNotification.classList.remove('opacity-100');
+      this.toastNotification.classList.add('opacity-0', 'pointer-events-none');
+    }, 2800);
+  }
+
+  hideAllModals() {
+    if (this.titleScreen) this.titleScreen.classList.add('hidden');
+    if (this.saveModal) this.saveModal.classList.add('hidden');
+    if (this.soundModal) this.soundModal.classList.add('hidden');
+    if (this.journalModal) this.journalModal.classList.add('hidden');
+    if (this.settingsModal) this.settingsModal.classList.add('hidden');
+    if (this.endingModal) this.endingModal.classList.add('hidden');
+    if (this.epilogueModal) this.epilogueModal.classList.add('hidden');
   }
 
   updateChapterInfo(chapter) {
-    const chNum = document.getElementById('hudChapterNum');
-    const chGoal = document.getElementById('hudGoal');
-    if (chNum) chNum.textContent = chapter.name;
-    if (chGoal) chGoal.textContent = chapter.goal;
+    if (this.chapterBanner && chapter) {
+      const sub = chapter.subtitle || chapter.location || chapter.goal || '';
+      this.chapterBanner.textContent = sub ? `${chapter.name} — ${sub}` : (chapter.name || 'Schloss Beja');
+    }
   }
 
-  updateSanity(sanity, isPanic) {
-    const sanityVal = document.getElementById('hudSanityVal');
-    const heartIcon = document.getElementById('hudHeartIcon');
-
-    if (sanityVal) {
-      sanityVal.textContent = Math.round(sanity) + '%';
-      sanityVal.className = sanity < 30 ? 'text-red-500 font-retro' : 'text-emerald-400 font-retro';
+  updateSanity(sanity, isPanic = false) {
+    if (this.sanityBar) {
+      const pct = Math.max(0, Math.min(100, sanity));
+      this.sanityBar.style.width = `${pct}%`;
+      if (pct > 60) {
+        this.sanityBar.style.backgroundColor = '#10b981';
+      } else if (pct > 30) {
+        this.sanityBar.style.backgroundColor = '#f59e0b';
+      } else {
+        this.sanityBar.style.backgroundColor = '#dc2626';
+      }
     }
 
-    if (heartIcon) {
-      heartIcon.className = isPanic ? 'heart-pulse-panic' : 'heart-pulse text-red-500';
+    if (this.sanityValueText) {
+      this.sanityValueText.textContent = `${Math.round(sanity)}%`;
+    }
+
+    if (this.sanityHeart) {
+      if (isPanic) {
+        this.sanityHeart.className = 'heart-pulse-panic';
+      } else {
+        this.sanityHeart.className = 'heart-pulse';
+      }
     }
   }
 
   updateInventory(items) {
-    const slots = document.querySelectorAll('.inventory-slot');
-    const itemMap = {
-      lantern: { icon: '🏮', name: 'Laterne' },
-      gate_gear: { icon: '⚙️', name: 'Zahnrad' },
-      castle_key: { icon: '🗝️', name: 'Schlossschlüssel' },
-      library_crest: { icon: '🛡️', name: 'Wappen' }
+    if (!this.inventoryContainer) return;
+    this.inventoryContainer.innerHTML = '';
+
+    const iconMap = {
+      lantern: '🏮',
+      castle_key: '🗝️',
+      gate_gear: '⚙️',
+      library_crest: '🛡️'
     };
 
-    slots.forEach((slot, index) => {
-      const itemId = items[index];
-      if (itemId && itemMap[itemId]) {
-        slot.textContent = itemMap[itemId].icon;
-        slot.title = itemMap[itemId].name;
-        slot.classList.add('has-item');
+    for (let i = 0; i < 4; i++) {
+      const slot = document.createElement('div');
+      const itemKey = items[i];
+
+      if (itemKey) {
+        slot.className = 'inventory-slot has-item';
+        slot.textContent = iconMap[itemKey] || '📦';
+        slot.title = itemKey;
       } else {
+        slot.className = 'inventory-slot';
         slot.textContent = '';
-        slot.title = 'Leer';
-        slot.classList.remove('has-item');
       }
-    });
+      this.inventoryContainer.appendChild(slot);
+    }
   }
 
   addDiaryEntry(diary) {
-    if (!this.discoveredDiaries.find(d => d.id === diary.id)) {
-      this.discoveredDiaries.push(diary);
-    }
-  }
-
-  renderJournalList() {
-    const list = document.getElementById('journalContent');
+    const list = document.getElementById('journalEntriesList');
     if (!list) return;
 
-    if (this.discoveredDiaries.length === 0) {
-      list.innerHTML = `<div class="text-slate-400 italic text-center py-6">Noch keine Tagebucheinträge gefunden. Durchsuche die Räume des Schlosses!</div>`;
-      return;
-    }
-
-    list.innerHTML = this.discoveredDiaries.map(d => `
-      <div class="border border-emerald-900 bg-black/40 p-3 rounded mb-3">
-        <h3 class="text-emerald-400 font-retro text-xs mb-1">${d.title}</h3>
-        <p class="text-slate-200 text-xs font-pixel leading-relaxed">${d.text}</p>
-      </div>
-    `).join('');
+    const entryDiv = document.createElement('div');
+    entryDiv.className = 'p-3 bg-slate-900/80 border border-amber-900/40 rounded';
+    entryDiv.innerHTML = `
+      <div class="text-amber-400 font-serif font-bold text-sm mb-1">${diary.title}</div>
+      <div class="text-slate-300 text-xs leading-relaxed italic">"${diary.text}"</div>
+    `;
+    list.appendChild(entryDiv);
   }
 
-  async fetchAndDisplayHighscores() {
-    const list = document.getElementById('highscoreList');
-    if (!list) return;
+  // ==========================================
+  // SAVE / LOAD MANAGER MODAL
+  // ==========================================
 
-    list.innerHTML = `<div class="text-center py-4 text-emerald-400">Lade Bestenliste...</div>`;
-
+  async fetchSavesList() {
     try {
-      const res = await fetch('/api/scores');
-      const scores = await res.json();
-
-      list.innerHTML = scores.map((s, idx) => `
-        <div class="flex justify-between items-center py-1.5 border-b border-emerald-950 font-pixel text-xs">
-          <div class="flex items-center gap-2">
-            <span class="text-emerald-500 font-retro text-[10px]">#${idx + 1}</span>
-            <span class="text-slate-200 font-bold">${s.name}</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-yellow-400 font-retro text-[10px]">${s.ending}</span>
-            <span class="text-cyan-400">${Math.floor(s.timeSec / 60)}m ${s.timeSec % 60}s</span>
-          </div>
-        </div>
-      `).join('');
+      const res = await fetch('/api/saves');
+      if (res.ok) {
+        const saves = await res.json();
+        if (saves && saves.length > 0) {
+          this.enableResumeButton(saves[0]);
+        }
+      }
     } catch (e) {
-      list.innerHTML = `<div class="text-red-400 text-center py-4">Fehler beim Laden der Bestenliste.</div>`;
+      const autoSave = localStorage.getItem('bejacastle_save_auto');
+      if (autoSave) this.enableResumeButton(JSON.parse(autoSave));
     }
+  }
+
+  async openSaveManager() {
+    this.saveModal.classList.remove('hidden');
+    this.renderSaveSlots();
+  }
+
+  async renderSaveSlots() {
+    this.saveSlotsContainer.innerHTML = '<div class="text-center py-6 text-slate-400">Lade Spielstände...</div>';
+
+    let serverSaves = [];
+    try {
+      const res = await fetch('/api/saves');
+      if (res.ok) serverSaves = await res.json();
+    } catch (e) {}
+
+    const slotIds = ['auto', 'slot_1', 'slot_2', 'slot_3'];
+    const slotTitles = {
+      auto: 'Automatische Sicherung (Auto-Save)',
+      slot_1: 'Speicherplatz 1',
+      slot_2: 'Speicherplatz 2',
+      slot_3: 'Speicherplatz 3'
+    };
+
+    this.saveSlotsContainer.innerHTML = '';
+
+    slotIds.forEach(slotId => {
+      // Find server save or local backup
+      let save = serverSaves.find(s => s.slot === slotId);
+      if (!save) {
+        const local = localStorage.getItem(`bejacastle_save_${slotId}`);
+        if (local) save = JSON.parse(local);
+      }
+
+      const card = document.createElement('div');
+      card.className = 'save-slot-card flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-3';
+
+      if (save) {
+        card.innerHTML = `
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <span class="text-amber-400 font-serif font-bold text-sm">${slotTitles[slotId]}</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">${save.chapterName || 'Kapitel I'}</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-1 flex flex-wrap gap-4">
+              <span>📅 ${save.timestamp || 'Unbekannt'}</span>
+              <span>⏳ Spielzeit: ${Math.floor((save.gameTimeSec || 0) / 60)}m ${(save.gameTimeSec || 0) % 60}s</span>
+              <span>🧠 Verstand: ${save.sanity || 100}%</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 self-end md:self-center">
+            <button class="gothic-btn btn-primary text-xs" data-load-slot="${slotId}">📂 LADEN</button>
+            <button class="gothic-btn text-xs" data-save-slot="${slotId}">💾 ÜBERSCHREIBEN</button>
+            ${slotId !== 'auto' ? `<button class="gothic-btn btn-danger text-xs" data-delete-slot="${slotId}">🗑️</button>` : ''}
+          </div>
+        `;
+      } else {
+        card.innerHTML = `
+          <div class="flex-1">
+            <span class="text-slate-400 font-serif text-sm">${slotTitles[slotId]}</span>
+            <div class="text-xs text-slate-500 mt-0.5">Leer (Kein Spielstand gespeichert)</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="gothic-btn btn-primary text-xs" data-save-slot="${slotId}">💾 HIER SPEICHERN</button>
+          </div>
+        `;
+      }
+
+      this.saveSlotsContainer.appendChild(card);
+    });
+
+    // Bind action buttons inside save manager
+    this.saveSlotsContainer.querySelectorAll('[data-load-slot]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const slot = e.currentTarget.getAttribute('data-load-slot');
+        this.game.loadGame(slot);
+      });
+    });
+
+    this.saveSlotsContainer.querySelectorAll('[data-save-slot]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const slot = e.currentTarget.getAttribute('data-save-slot');
+        await this.game.saveGame(slot, slotTitles[slot]);
+        this.renderSaveSlots();
+      });
+    });
+
+    this.saveSlotsContainer.querySelectorAll('[data-delete-slot]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const slot = e.currentTarget.getAttribute('data-delete-slot');
+        if (confirm(`Spielstand in "${slotTitles[slot]}" wirklich löschen?`)) {
+          try {
+            await fetch(`/api/save/${slot}`, { method: 'DELETE' });
+          } catch (e) {}
+          localStorage.removeItem(`bejacastle_save_${slot}`);
+          this.renderSaveSlots();
+        }
+      });
+    });
+  }
+
+  openSoundboard() {
+    this.soundModal.classList.remove('hidden');
+  }
+
+  toggleJournal() {
+    const isOpening = this.journalModal.classList.contains('hidden');
+    this.journalModal.classList.toggle('hidden');
+    if (isOpening && window.castleAudio) {
+      window.castleAudio.playBookOpen();
+    }
+  }
+
+  openSettings() {
+    this.settingsModal.classList.remove('hidden');
   }
 
   showEndingSelection() {
-    const modal = document.getElementById('endingModal');
-    if (!modal) return;
-    modal.classList.remove('hidden');
-
-    const optSalvation = document.getElementById('endingBtnSalvation');
-    const optEscape = document.getElementById('endingBtnEscape');
-    const optDarkness = document.getElementById('endingBtnDarkness');
-
-    const handleChoice = (endingKey) => {
-      modal.classList.add('hidden');
-      this.showEndingResult(endingKey);
-    };
-
-    if (optSalvation) optSalvation.onclick = () => handleChoice('salvation');
-    if (optEscape) optEscape.onclick = () => handleChoice('escape');
-    if (optDarkness) optDarkness.onclick = () => handleChoice('darkness');
+    this.endingModal.classList.remove('hidden');
   }
 
-  showEndingResult(endingKey) {
-    const ending = CASTLE_STORY.endings[endingKey];
-    const victoryModal = document.getElementById('victoryModal');
-    if (!victoryModal || !ending) return;
-
-    const titleEl = document.getElementById('victoryTitle');
-    const textEl = document.getElementById('victoryText');
-    const badgeEl = document.getElementById('victoryBadge');
-    const timeEl = document.getElementById('victoryTime');
-
-    if (titleEl) titleEl.textContent = ending.title;
-    if (textEl) textEl.textContent = ending.text;
-    if (badgeEl) badgeEl.textContent = ending.badge;
-
-    const totalSec = Math.round(this.game ? this.game.gameTimeSec : 180);
-    if (timeEl) timeEl.textContent = `${Math.floor(totalSec / 60)} Minuten, ${totalSec % 60} Sekunden`;
-
-    victoryModal.classList.remove('hidden');
-
-    const submitBtn = document.getElementById('submitScoreBtn');
-    if (submitBtn) {
-      submitBtn.onclick = async () => {
-        const nameInput = document.getElementById('playerNameInput');
-        const name = nameInput ? nameInput.value.trim() : 'RECKEN_BEJA';
-
-        try {
-          await fetch('/api/scores', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: name || 'ABENTEUERER',
-              timeSec: totalSec,
-              ending: ending.badge,
-              sanity: Math.round(this.game ? this.game.player.sanity : 80),
-              date: new Date().toISOString().split('T')[0]
-            })
-          });
-        } catch (e) {}
-
-        victoryModal.classList.add('hidden');
-        if (this.game) this.game.loadChapter(0);
-      };
+  handleEndingSelection(choice) {
+    this.endingModal.classList.add('hidden');
+    let endingData = CASTLE_STORY.endings[choice];
+    if (!endingData) {
+      if (choice === 'sacrifice') endingData = CASTLE_STORY.endings['salvation'];
+      else if (choice === 'shadow_lord') endingData = CASTLE_STORY.endings['darkness'];
+      else endingData = CASTLE_STORY.endings['salvation'] || CASTLE_STORY.endings['escape'];
     }
+    if (!endingData) return;
+
+    if (window.castleAudio) {
+      if (choice === 'salvation' || choice === 'sacrifice') {
+        window.castleAudio.playClockBell();
+      } else if (choice === 'darkness' || choice === 'shadow_lord') {
+        window.castleAudio.playGhostMoan();
+        window.castleAudio.playHorrorStinger();
+      } else {
+        window.castleAudio.playWindGust();
+      }
+    }
+
+    const epilogueTitle = document.getElementById('epilogueTitle');
+    const epilogueText = document.getElementById('epilogueText');
+    const epilogueStats = document.getElementById('epilogueStats');
+
+    if (epilogueTitle) epilogueTitle.textContent = endingData.title;
+    if (epilogueText) epilogueText.textContent = endingData.text;
+    if (epilogueStats) {
+      const minutes = Math.floor((this.game.gameTimeSec || 0) / 60);
+      const seconds = Math.round((this.game.gameTimeSec || 0) % 60);
+      epilogueStats.innerHTML = `
+        <div>⏳ Überlebenszeit: <b>${minutes}m ${seconds}s</b></div>
+        <div>🧠 Verbleibender Verstand: <b>${Math.round(this.game.player.sanity)}%</b></div>
+        <div>🎖️ Abzeichen: <b>${endingData.badge || 'Wanderer'}</b></div>
+      `;
+    }
+
+    // Submit score to server
+    try {
+      fetch('/api/scores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: "WANDERER",
+          timeSec: Math.round(this.game.gameTimeSec || 0),
+          ending: endingData.title,
+          sanity: Math.round(this.game.player.sanity),
+          date: new Date().toISOString().split('T')[0]
+        })
+      });
+    } catch (e) {}
+
+    this.epilogueModal.classList.remove('hidden');
   }
 }
 
-window.castleUI = new CastleUI();
+window.CastleUI = CastleUI;

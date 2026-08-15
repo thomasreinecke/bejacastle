@@ -121,6 +121,12 @@ const CASTLE_STORY = {
       text: "Du setzt die drei Kristalle in perfekter Harmonie ein. Ein gleißender Lichtstrahl schießt in den Himmel und zerschlägt die ewige Finsternis! Der Spuk löst sich auf, die Seelen finden Frieden, und die Morgensonne taucht Schloss Beja in goldenes Licht. Du hast den Fluch gebrochen!",
       badge: "Held der Dämmerung"
     },
+    sacrifice: {
+      id: "sacrifice",
+      title: "🌟 ENDE I: DIE ERLÖSUNG DES VERFLUCHTEN SCHLOSSES",
+      text: "Du setzt die drei Kristalle in perfekter Harmonie ein. Ein gleißender Lichtstrahl schießt in den Himmel und zerschlägt die ewige Finsternis! Der Spuk löst sich auf, die Seelen finden Frieden, und die Morgensonne taucht Schloss Beja in goldenes Licht. Du hast den Fluch gebrochen!",
+      badge: "Held der Dämmerung"
+    },
     escape: {
       id: "escape",
       title: "🏃 ENDE II: DIE PANISCHE FLUCHT",
@@ -129,6 +135,12 @@ const CASTLE_STORY = {
     },
     darkness: {
       id: "darkness",
+      title: "👑 ENDE III: DER NEUE SCHATTENHERR",
+      text: "Fasziniert von der uralten Macht des Turms absorbierst du die Schattenenergie. Die Geister des Schlosses verneigen sich vor dir. Die Augen auf den Porträts glühen auf – du bist nun der ewige Herr über das Schloss im verfluchten Wald.",
+      badge: "Graf der Finsternis"
+    },
+    shadow_lord: {
+      id: "shadow_lord",
       title: "👑 ENDE III: DER NEUE SCHATTENHERR",
       text: "Fasziniert von der uralten Macht des Turms absorbierst du die Schattenenergie. Die Geister des Schlosses verneigen sich vor dir. Die Augen auf den Porträts glühen auf – du bist nun der ewige Herr über das Schloss im verfluchten Wald.",
       badge: "Graf der Finsternis"
